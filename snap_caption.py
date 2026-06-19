@@ -2,7 +2,7 @@
 
 Tuned for 9:16 video (canonical 1080×1920):
   - Font: Helvetica / Nimbus Sans, 2.75% of frame width
-  - Bar: full width, hugs text with tight padding (not the old fixed 74px strip)
+  - Bar: full width, text-sized height with balanced padding (~40% glyph each side)
   - Bar fill: black @ 60%; centered vertically; grows up/down for extra lines
 """
 
@@ -16,7 +16,8 @@ from PIL import Image, ImageDraw, ImageFont
 REF_W = 1080
 REF_H = 1920
 FONT_WIDTH_RATIO = 0.0275
-V_PAD_RATIO = 0.11  # vertical padding each side, fraction of glyph height
+V_PAD_RATIO = 0.40  # vertical padding each side, fraction of glyph height
+MIN_V_PAD_PX = 8    # at 1080×1920 reference scale
 BAR_ALPHA = 0.6
 BAR_RGB = (0, 0, 0)
 MAX_LINES = 6
@@ -107,8 +108,12 @@ def _truncate_to_width(text: str, font: ImageFont.FreeTypeFont, max_width: int) 
     return (trimmed + "…") if trimmed else "…"
 
 
-def _bar_height(glyph_h: int, line_count: int, line_gap: int) -> int:
-    v_pad = max(4, round(glyph_h * V_PAD_RATIO))
+def _v_pad(glyph_h: int, scale: float) -> int:
+    return max(round(MIN_V_PAD_PX * scale), round(glyph_h * V_PAD_RATIO))
+
+
+def _bar_height(glyph_h: int, line_count: int, line_gap: int, scale: float) -> int:
+    v_pad = _v_pad(glyph_h, scale)
     if line_count <= 1:
         return glyph_h + 2 * v_pad
     text_block = glyph_h * line_count + line_gap * (line_count - 1)
@@ -123,6 +128,7 @@ def render_overlay_png(caption: str, frame_w: int, frame_h: int, out_path: Path)
         raise ValueError("Invalid frame size")
 
     m = snap_metrics(frame_w, frame_h)
+    scale = frame_h / REF_H
     font = ImageFont.truetype(_font_path(), m["font_size"])
     lines = _wrap_lines(caption, font, frame_w - 2 * m["h_pad"])
     if not lines:
@@ -130,7 +136,7 @@ def render_overlay_png(caption: str, frame_w: int, frame_h: int, out_path: Path)
 
     glyph_h = _glyph_height(font)
     line_step = glyph_h + m["line_gap"]
-    bar_h = min(_bar_height(glyph_h, len(lines), m["line_gap"]), frame_h)
+    bar_h = min(_bar_height(glyph_h, len(lines), m["line_gap"], scale), frame_h)
     bar_y = m["anchor_center_y"] - bar_h // 2
     bar_y = max(0, min(bar_y, frame_h - bar_h))
 
