@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>iPhone Video Look</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface-2: #242836;
+      --border: #343a4d;
+      --text: #f3f4f8;
+      --muted: #9aa3b8;
+      --accent: #6c8cff;
+      --accent-hover: #8aa4ff;
+      --success: #3dd68c;
+      --danger: #ff6b7a;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(108, 140, 255, 0.15), transparent),
+        var(--bg);
+      color: var(--text);
+      padding: 24px 20px 40px;
+      padding-bottom: max(40px, env(safe-area-inset-bottom));
+    }
+
+    .wrap { max-width: 560px; margin: 0 auto; }
+
+    header { text-align: center; margin-bottom: 28px; }
+    header h1 { margin: 0 0 8px; font-size: clamp(1.5rem, 5vw, 2rem); }
+    header p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+
+    .drop {
+      background: var(--surface);
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      touch-action: manipulation;
+    }
+
+    .drop:hover, .drop.dragover {
+      border-color: var(--accent);
+      background: rgba(108, 140, 255, 0.06);
+    }
+
+    .drop-icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.7; }
+    .drop strong { display: block; margin-bottom: 6px; font-size: 1.05rem; }
+    .drop span { color: var(--muted); font-size: 0.9rem; }
+
+    input[type="file"] { display: none; }
+
+    .file-name {
+      margin-top: 16px;
+      padding: 12px 14px;
+      background: var(--surface-2);
+      border-radius: 8px;
+      font-size: 0.9rem;
+      word-break: break-all;
+      display: none;
+    }
+
+    .file-name.show { display: block; }
+
+    button {
+      appearance: none;
+      border: none;
+      border-radius: 10px;
+      padding: 16px 20px;
+      min-height: 52px;
+      width: 100%;
+      margin-top: 16px;
+      font: inherit;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn-go {
+      background: var(--accent);
+      color: #fff;
+      display: none;
+    }
+
+    .btn-go.show { display: block; }
+    .btn-go:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .status {
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      display: none;
+      text-align: center;
+    }
+
+    .status.show { display: block; }
+    .status.busy { background: rgba(108, 140, 255, 0.12); color: var(--accent); }
+    .status.ok { background: rgba(61, 214, 140, 0.12); color: var(--success); }
+    .status.err { background: rgba(255, 107, 122, 0.12); color: var(--danger); }
+
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: -3px;
+      margin-right: 8px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .features {
+      margin-top: 24px;
+      padding: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .features li { margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>iPhone Video Look</h1>
+      <p>Drop AI video in, get phone-style footage out.</p>
+    </header>
+
+    <label class="drop" id="dropZone" for="fileInput">
+      <div class="drop-icon">📱</div>
+      <strong>Drop video here or tap to upload</strong>
+      <span>MP4, MOV, WebM · max 200 MB · max 3 min</span>
+    </label>
+    <input type="file" id="fileInput" accept="video/*,.mp4,.mov,.webm,.mkv,.m4v" />
+
+    <div class="file-name" id="fileName"></div>
+    <button class="btn-go" id="processBtn" type="button">Make iPhone Look</button>
+
+    <div class="status" id="status"></div>
+
+    <ul class="features">
+      <li>30fps phone cadence (not cinematic 24fps)</li>
+      <li>Warm iPhone-style color + mild compression</li>
+      <li>Subtle handheld wobble + light grain</li>
+      <li>H.264 output ready for Instagram / TikTok</li>
+    </ul>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById("fileInput");
+    const dropZone = document.getElementById("dropZone");
+    const fileName = document.getElementById("fileName");
+    const processBtn = document.getElementById("processBtn");
+    const status = document.getElementById("status");
+
+    let selectedFile = null;
+
+    function setStatus(msg, type) {
+      status.textContent = msg;
+      status.className = "status show " + type;
+      if (type === "busy") {
+        status.innerHTML = '<span class="spinner"></span>' + msg;
+      }
+    }
+
+    function clearStatus() {
+      status.className = "status";
+    }
+
+    function pickFile(file) {
+      if (!file) return;
+      selectedFile = file;
+      fileName.textContent = file.name + " (" + formatSize(file.size) + ")";
+      fileName.classList.add("show");
+      processBtn.classList.add("show");
+      clearStatus();
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
+      return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    }
+
+    fileInput.addEventListener("change", () => pickFile(fileInput.files[0]));
+
+    dropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropZone.classList.add("dragover");
+    });
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("dragover");
+      pickFile(e.dataTransfer.files[0]);
+    });
+
+    processBtn.addEventListener("click", async () => {
+      if (!selectedFile) return;
+
+      const form = new FormData();
+      form.append("file", selectedFile);
+
+      processBtn.disabled = true;
+      setStatus("Processing… this can take a minute.", "busy");
+
+      try {
+        const res = await fetch("/api/process", { method: "POST", body: form });
+        if (!res.ok) {
+          const err = await res.text();
+          throw new Error(err || "Processing failed");
+        }
+
+        const blob = await res.blob();
+        const outName = selectedFile.name.replace(/\.[^.]+$/, "") + "_iphone.mp4";
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = outName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+
+        setStatus("Done! Your iPhone-style video downloaded.", "ok");
+      } catch (err) {
+        setStatus(err.message || "Something went wrong.", "err");
+      } finally {
+        processBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

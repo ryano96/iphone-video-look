@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: iphone-video-look
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8080"
