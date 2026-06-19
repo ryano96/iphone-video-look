@@ -26,7 +26,7 @@ if STATIC.is_dir():
 
 @app.get("/health")
 def health() -> dict:
-    from processor import FONT_CANDIDATES
+    from snap_caption import FONT_CANDIDATES
 
     font_ok = any(Path(p).is_file() for p in FONT_CANDIDATES)
     return {

@@ -59,7 +59,7 @@ def _run_job(job_id: str, src: Path) -> None:
 
     dst = job.work_dir / "output.mp4"
     try:
-        process_to_iphone_look(src, dst, caption=job.caption)
+        process_to_iphone_look(src, dst, caption=job.caption, work_dir=job.work_dir)
         with _lock:
             job.status = "done"
             job.output_path = dst

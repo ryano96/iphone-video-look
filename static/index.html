@@ -181,26 +181,31 @@
       max-height: 200px;
       overflow: hidden;
       border: 1px solid var(--border);
+      container-type: size;
     }
 
+    /* Classic Snap ratios: 640×1136 ref — bar @ 39.6% top, 6.5% tall, 3.08% font */
     .caption-preview .snap-bar {
       position: absolute;
       left: 0;
       right: 0;
-      top: 58%;
-      background: rgba(42, 42, 42, 0.72);
-      padding: 10px 12px;
+      top: 39.6%;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 1.05% 2.5%;
       text-align: center;
+      box-sizing: border-box;
     }
 
     .caption-preview .snap-bar span {
       color: #fff;
-      font-weight: 700;
-      font-size: 0.85rem;
-      line-height: 1.35;
-      font-family: "Segoe UI", system-ui, sans-serif;
-      white-space: pre-wrap;
-      word-break: break-word;
+      font-weight: 400;
+      font-size: 3.08cqh;
+      line-height: 1.2;
+      font-family: Helvetica, Arial, "Liberation Sans", sans-serif;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: block;
     }
 
     .caption-hint {
@@ -237,7 +242,7 @@
       <div class="caption-preview" id="captionPreview" style="display:none">
         <div class="snap-bar"><span id="captionPreviewText"></span></div>
       </div>
-      <p class="caption-hint">Leave blank for iPhone look only. Caption adds the full-width gray bar.</p>
+      <p class="caption-hint">Leave blank for iPhone look only. Caption adds the classic Snap bar (Helvetica, ~40% from top).</p>
     </div>
 
     <button class="btn-go" id="processBtn" type="button">Process Video</button>
@@ -246,7 +251,7 @@
 
     <ul class="features">
       <li>30fps iPhone-style color + compression</li>
-      <li>Optional Snapchat caption — full-width gray bar, white text</li>
+      <li>Optional Snapchat caption — thin black bar, small white Helvetica text</li>
       <li>H.264 output ready for Instagram / TikTok / Snap</li>
     </ul>
   </div>
