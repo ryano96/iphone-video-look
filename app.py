@@ -6,7 +6,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
@@ -52,7 +52,10 @@ async def _save_upload(file: UploadFile, dest: Path) -> int:
 
 
 @app.post("/api/process")
-async def start_process(file: UploadFile = File(...)) -> JSONResponse:
+async def start_process(
+    file: UploadFile = File(...),
+    caption: str = Form(""),
+) -> JSONResponse:
     if not file.filename:
         raise HTTPException(400, "No file provided")
 
@@ -73,7 +76,7 @@ async def start_process(file: UploadFile = File(...)) -> JSONResponse:
             shutil.rmtree(work_dir, ignore_errors=True)
             raise HTTPException(400, "Video too long (max 2 min).")
 
-        job = create_job(src, file.filename, work_dir)
+        job = create_job(src, file.filename, work_dir, caption=caption.strip())
         return JSONResponse({"job_id": job.id, "status": job.status})
     except HTTPException:
         raise

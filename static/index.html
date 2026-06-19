@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>iPhone Video Look</title>
+  <title>Video Look + Snap Caption</title>
   <style>
     :root {
       --bg: #0f1117;
@@ -138,13 +138,83 @@
     }
 
     .features li { margin-bottom: 4px; }
+
+    .caption-wrap {
+      margin-top: 16px;
+      display: none;
+    }
+
+    .caption-wrap.show { display: block; }
+
+    .caption-wrap label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .caption-input {
+      width: 100%;
+      min-height: 72px;
+      padding: 12px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font: inherit;
+      font-size: 1rem;
+      resize: vertical;
+    }
+
+    .caption-input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .caption-preview {
+      margin-top: 10px;
+      position: relative;
+      background: #1a1a1a;
+      border-radius: var(--radius);
+      aspect-ratio: 9 / 16;
+      max-height: 200px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .caption-preview .snap-bar {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 58%;
+      background: rgba(42, 42, 42, 0.72);
+      padding: 10px 12px;
+      text-align: center;
+    }
+
+    .caption-preview .snap-bar span {
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.85rem;
+      line-height: 1.35;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .caption-hint {
+      margin-top: 6px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
-      <h1>iPhone Video Look</h1>
-      <p>Drop AI video in, get phone-style footage out.</p>
+      <h1>Video Look + Snap Caption</h1>
+      <p>iPhone-style video with optional Snapchat caption bar.</p>
     </header>
 
     <label class="drop" id="dropZone" for="fileInput">
@@ -155,15 +225,29 @@
     <input type="file" id="fileInput" accept="video/*,.mp4,.mov,.webm,.mkv,.m4v" />
 
     <div class="file-name" id="fileName"></div>
-    <button class="btn-go" id="processBtn" type="button">Make iPhone Look</button>
+
+    <div class="caption-wrap" id="captionWrap">
+      <label for="captionInput">Snapchat caption (optional)</label>
+      <textarea
+        id="captionInput"
+        class="caption-input"
+        placeholder="Type your caption here..."
+        maxlength="220"
+      ></textarea>
+      <div class="caption-preview" id="captionPreview" style="display:none">
+        <div class="snap-bar"><span id="captionPreviewText"></span></div>
+      </div>
+      <p class="caption-hint">Leave blank for iPhone look only. Caption adds the full-width gray bar.</p>
+    </div>
+
+    <button class="btn-go" id="processBtn" type="button">Process Video</button>
 
     <div class="status" id="status"></div>
 
     <ul class="features">
-      <li>30fps phone cadence (not cinematic 24fps)</li>
-      <li>Warm iPhone-style color + mild compression</li>
-      <li>Subtle handheld wobble + light grain</li>
-      <li>H.264 output ready for Instagram / TikTok</li>
+      <li>30fps iPhone-style color + compression</li>
+      <li>Optional Snapchat caption — full-width gray bar, white text</li>
+      <li>H.264 output ready for Instagram / TikTok / Snap</li>
     </ul>
   </div>
 
@@ -173,6 +257,10 @@
     const fileName = document.getElementById("fileName");
     const processBtn = document.getElementById("processBtn");
     const status = document.getElementById("status");
+    const captionWrap = document.getElementById("captionWrap");
+    const captionInput = document.getElementById("captionInput");
+    const captionPreview = document.getElementById("captionPreview");
+    const captionPreviewText = document.getElementById("captionPreviewText");
 
     let selectedFile = null;
 
@@ -194,8 +282,21 @@
       fileName.textContent = file.name + " (" + formatSize(file.size) + ")";
       fileName.classList.add("show");
       processBtn.classList.add("show");
+      captionWrap.classList.add("show");
       clearStatus();
     }
+
+    function updateCaptionPreview() {
+      const text = captionInput.value.trim();
+      if (text) {
+        captionPreviewText.textContent = text;
+        captionPreview.style.display = "block";
+      } else {
+        captionPreview.style.display = "none";
+      }
+    }
+
+    captionInput.addEventListener("input", updateCaptionPreview);
 
     function formatSize(bytes) {
       if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
@@ -220,6 +321,7 @@
 
       const form = new FormData();
       form.append("file", selectedFile);
+      form.append("caption", captionInput.value.trim());
 
       processBtn.disabled = true;
       setStatus("Uploading…", "busy");
@@ -275,7 +377,7 @@
         a.remove();
         URL.revokeObjectURL(url);
 
-        setStatus("Done! Your iPhone-style video downloaded.", "ok");
+        setStatus("Done! Your video downloaded.", "ok");
       } catch (err) {
         setStatus(err.message || "Something went wrong.", "err");
       } finally {

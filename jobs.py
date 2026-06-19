@@ -18,6 +18,7 @@ JobStatus = Literal["queued", "processing", "done", "error"]
 class Job:
     id: str
     filename: str
+    caption: str = ""
     status: JobStatus = "queued"
     error: str = ""
     output_path: Path | None = None
@@ -29,10 +30,11 @@ _lock = threading.Lock()
 _jobs: dict[str, Job] = {}
 
 
-def create_job(src: Path, filename: str, work_dir: Path) -> Job:
+def create_job(src: Path, filename: str, work_dir: Path, *, caption: str = "") -> Job:
     job = Job(
         id=uuid.uuid4().hex[:12],
         filename=filename,
+        caption=caption,
         work_dir=work_dir,
     )
     with _lock:
@@ -57,7 +59,7 @@ def _run_job(job_id: str, src: Path) -> None:
 
     dst = job.work_dir / "output.mp4"
     try:
-        process_to_iphone_look(src, dst)
+        process_to_iphone_look(src, dst, caption=job.caption)
         with _lock:
             job.status = "done"
             job.output_path = dst
