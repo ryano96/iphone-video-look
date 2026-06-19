@@ -2,8 +2,9 @@
 
 Measured from classic Snap UI (640×1136 iPhone canvas, Kapwing 720×1280 template):
   - Font: Helvetica Regular, 35px at 1136h (~3.08% of frame height)
-  - Bar: edge-to-edge, ~74px tall single line (~6.5% of height), black @ 60%
-  - Position: y=450 (~39.6% from top), white centered text, regular weight
+  - Bar: edge-to-edge, grows with lines, black @ 60%
+  - Anchor: single-line bar center at y=450+37 (~42.9% from top)
+  - Lines stack from the middle: bar expands up/down, each line centered
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ REF_BAR_Y = 450
 REF_BAR_ALPHA = 0.6
 REF_H_PAD = 16
 REF_V_PAD = 12
+MAX_LINES = 6
 
 FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
@@ -40,16 +42,17 @@ def _font_path() -> str:
 def snap_metrics(frame_w: int, frame_h: int) -> dict:
     """Scale classic Snap ratios to the output frame size."""
     scale = frame_h / REF_H
-    font_size = max(11, round(REF_FONT * scale))
+    bar_h_single = max(18, round(REF_BAR_H * scale))
+    bar_y = max(0, min(round(REF_BAR_Y * scale), frame_h - 1))
     return {
         "scale": scale,
-        "font_size": font_size,
-        "bar_h_single": max(18, round(REF_BAR_H * scale)),
-        "bar_y": max(0, min(round(REF_BAR_Y * scale), frame_h - 1)),
+        "font_size": max(11, round(REF_FONT * scale)),
+        "bar_h_single": bar_h_single,
+        "bar_y": bar_y,
+        "anchor_center_y": bar_y + bar_h_single // 2,
         "h_pad": max(8, round(REF_H_PAD * scale)),
         "v_pad": max(6, round(REF_V_PAD * scale)),
         "line_gap": max(1, round(2 * scale)),
-        "min_font_size": max(9, round(REF_FONT * scale * 0.78)),
     }
 
 
@@ -63,7 +66,7 @@ def _wrap_lines(
     font: ImageFont.FreeTypeFont,
     max_width: int,
     *,
-    max_lines: int = 2,
+    max_lines: int = MAX_LINES,
 ) -> list[str]:
     words = text.split()
     if not words:
@@ -71,36 +74,66 @@ def _wrap_lines(
 
     lines: list[str] = []
     current = ""
-    for word in words:
+    word_idx = 0
+    while word_idx < len(words):
+        word = words[word_idx]
         trial = f"{current} {word}".strip() if current else word
         if _text_width(trial, font) <= max_width:
             current = trial
-        else:
-            if current:
-                lines.append(current)
-            current = word
+            word_idx += 1
+            continue
+
+        if current:
+            lines.append(current)
+            current = ""
             if len(lines) >= max_lines:
-                break
-    if current and len(lines) < max_lines:
+                remainder = " ".join(words[word_idx:])
+                lines[-1] = _truncate_to_width(remainder, font, max_width)
+                return lines
+            continue
+
+        lines.append(_truncate_to_width(word, font, max_width))
+        word_idx += 1
+        if len(lines) >= max_lines:
+            return lines
+
+    if current:
         lines.append(current)
     return lines[:max_lines]
 
 
-def _fit_single_line(
+def _truncate_to_width(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> str:
+    if _text_width(text, font) <= max_width:
+        return text
+    trimmed = text
+    while trimmed and _text_width(trimmed + "…", font) > max_width:
+        trimmed = trimmed[:-1]
+    return (trimmed + "…") if trimmed else "…"
+
+
+def _layout_lines(
     text: str,
     font_path: str,
     font_size: int,
-    min_font_size: int,
     max_width: int,
+    frame_h: int,
+    v_pad: int,
+    line_gap: int,
 ) -> tuple[ImageFont.FreeTypeFont, list[str]]:
-    size = font_size
-    while size >= min_font_size:
-        font = ImageFont.truetype(font_path, size)
-        if _text_width(text, font) <= max_width:
-            return font, [text]
-        size -= 1
-    font = ImageFont.truetype(font_path, min_font_size)
-    return font, _wrap_lines(text, font, max_width, max_lines=2)
+    font = ImageFont.truetype(font_path, font_size)
+    lines = _wrap_lines(text, font, max_width)
+    if not lines:
+        return font, []
+
+    line_h = font.size + line_gap
+    max_bar_h = int(frame_h * 0.22)
+    while len(lines) > 1 and v_pad * 2 + line_h * len(lines) > max_bar_h and font_size > 10:
+        font_size -= 1
+        font = ImageFont.truetype(font_path, font_size)
+        lines = _wrap_lines(text, font, max_width)
+        line_h = font.size + line_gap
+
+    return font, lines
 
 
 def render_overlay_png(caption: str, frame_w: int, frame_h: int, out_path: Path) -> None:
@@ -111,15 +144,16 @@ def render_overlay_png(caption: str, frame_w: int, frame_h: int, out_path: Path)
         raise ValueError("Invalid frame size")
 
     m = snap_metrics(frame_w, frame_h)
-    font_path = _font_path()
     max_text_w = frame_w - 2 * m["h_pad"]
 
-    font, lines = _fit_single_line(
+    font, lines = _layout_lines(
         caption,
-        font_path,
+        _font_path(),
         m["font_size"],
-        m["min_font_size"],
         max_text_w,
+        frame_h,
+        m["v_pad"],
+        m["line_gap"],
     )
     if not lines:
         raise ValueError("Caption could not be rendered")
@@ -127,21 +161,21 @@ def render_overlay_png(caption: str, frame_w: int, frame_h: int, out_path: Path)
     line_h = font.size + m["line_gap"]
     bar_h = m["v_pad"] * 2 + line_h * len(lines)
     bar_h = min(bar_h, frame_h)
-    bar_y = min(m["bar_y"], max(0, frame_h - bar_h))
+    bar_y = m["anchor_center_y"] - bar_h // 2
+    bar_y = max(0, min(bar_y, frame_h - bar_h))
 
     overlay = Image.new("RGBA", (frame_w, frame_h), (0, 0, 0, 0))
     bar = Image.new("RGBA", (frame_w, bar_h), (0, 0, 0, int(255 * REF_BAR_ALPHA)))
     draw = ImageDraw.Draw(bar)
 
-    y = m["v_pad"]
+    block_h = line_h * len(lines)
+    y = (bar_h - block_h) // 2
     for line in lines:
         bbox = font.getbbox(line)
         text_w = bbox[2] - bbox[0]
         x = max(0, (frame_w - text_w) // 2)
         draw.text((x, y - bbox[1]), line, font=font, fill=(255, 255, 255, 255))
         y += line_h
-        if y >= bar_h:
-            break
 
     overlay.paste(bar, (0, bar_y), bar)
     overlay.save(out_path, "PNG")

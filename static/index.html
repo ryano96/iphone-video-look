@@ -184,27 +184,28 @@
       container-type: size;
     }
 
-    /* Classic Snap ratios: 640×1136 ref — bar @ 39.6% top, 6.5% tall, 3.08% font */
+    /* Classic Snap: anchor center ~42.9% from top; bar grows up/down from middle */
     .caption-preview .snap-bar {
       position: absolute;
       left: 0;
       right: 0;
-      top: 39.6%;
+      top: 42.9%;
+      transform: translateY(-50%);
       background: rgba(0, 0, 0, 0.6);
       padding: 1.05% 2.5%;
       text-align: center;
       box-sizing: border-box;
+      max-width: 100%;
     }
 
     .caption-preview .snap-bar span {
       color: #fff;
       font-weight: 400;
       font-size: 3.08cqh;
-      line-height: 1.2;
+      line-height: 1.25;
       font-family: Helvetica, Arial, "Liberation Sans", sans-serif;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      white-space: pre-wrap;
+      word-break: break-word;
       display: block;
     }
 
@@ -291,10 +292,28 @@
       clearStatus();
     }
 
+    function wrapPreviewLines(text, maxChars) {
+      const words = text.split(/\s+/).filter(Boolean);
+      if (!words.length) return "";
+      const lines = [];
+      let current = "";
+      for (const word of words) {
+        const trial = current ? current + " " + word : word;
+        if (trial.length <= maxChars) {
+          current = trial;
+        } else {
+          if (current) lines.push(current);
+          current = word;
+        }
+      }
+      if (current) lines.push(current);
+      return lines.join("\n");
+    }
+
     function updateCaptionPreview() {
       const text = captionInput.value.trim();
       if (text) {
-        captionPreviewText.textContent = text;
+        captionPreviewText.textContent = wrapPreviewLines(text, 28);
         captionPreview.style.display = "block";
       } else {
         captionPreview.style.display = "none";
