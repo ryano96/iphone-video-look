@@ -8,7 +8,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py processor.py ./
+COPY app.py processor.py jobs.py ./
 COPY static/ ./static/
 
 ENV PORT=10000

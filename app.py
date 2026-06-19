@@ -2,24 +2,23 @@
 
 from __future__ import annotations
 
-import asyncio
 import shutil
 import tempfile
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from processor import MAX_BYTES, process_file
+from jobs import cleanup_job, create_job, get_job
+from processor import MAX_BYTES, probe_video
 
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
 CHUNK = 1024 * 1024
 
-app = FastAPI(title="iPhone Video Look", version="1.0.0")
-_process_lock = asyncio.Lock()
+app = FastAPI(title="iPhone Video Look", version="1.1.0")
 
 if STATIC.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -38,7 +37,7 @@ def index() -> HTMLResponse:
     return HTMLResponse(page.read_text(encoding="utf-8"))
 
 
-async def _save_upload(file: UploadFile, dest: Path) -> None:
+async def _save_upload(file: UploadFile, dest: Path) -> int:
     size = 0
     with dest.open("wb") as out:
         while True:
@@ -47,65 +46,72 @@ async def _save_upload(file: UploadFile, dest: Path) -> None:
                 break
             size += len(chunk)
             if size > MAX_BYTES:
-                raise HTTPException(
-                    400,
-                    f"File too large (max {MAX_BYTES // (1024 * 1024)} MB).",
-                )
+                raise HTTPException(400, f"File too large (max {MAX_BYTES // (1024 * 1024)} MB).")
             out.write(chunk)
+    return size
 
 
 @app.post("/api/process")
-async def process_video(file: UploadFile = File(...)) -> FileResponse:
+async def start_process(file: UploadFile = File(...)) -> JSONResponse:
     if not file.filename:
         raise HTTPException(400, "No file provided")
 
-    async with _process_lock:
-        return await _handle_process(file)
-
-
-async def _handle_process(file: UploadFile) -> FileResponse:
-    upload_tmp = tempfile.TemporaryDirectory(prefix="iphonevid_in_")
-    root = Path(upload_tmp.name)
-    ext = Path(file.filename or "video.mp4").suffix.lower() or ".mp4"
+    work_dir = Path(tempfile.mkdtemp(prefix="iphonevid_job_"))
+    ext = Path(file.filename).suffix.lower() or ".mp4"
     if ext not in {".mp4", ".mov", ".webm", ".mkv", ".m4v"}:
         ext = ".mp4"
-    src = root / f"input{ext}"
+    src = work_dir / f"input{ext}"
 
-    out_tmp: tempfile.TemporaryDirectory | None = None
     try:
-        await _save_upload(file, src)
-        if src.stat().st_size == 0:
+        size = await _save_upload(file, src)
+        if size == 0:
+            shutil.rmtree(work_dir, ignore_errors=True)
             raise HTTPException(400, "Empty file")
 
-        out_path, meta, out_tmp = await asyncio.to_thread(process_file, src, file.filename)
+        info = probe_video(src)
+        if info["duration"] > 120:
+            shutil.rmtree(work_dir, ignore_errors=True)
+            raise HTTPException(400, "Video too long (max 2 min).")
 
-        def cleanup() -> None:
-            if out_tmp:
-                out_tmp.cleanup()
-            upload_tmp.cleanup()
-
-        return FileResponse(
-            path=out_path,
-            media_type="video/mp4",
-            filename=f"iphone_{Path(file.filename).stem}.mp4",
-            headers={
-                "X-Input-Duration": str(meta["input"]["duration"]),
-                "X-Output-Size": str(meta["size_bytes"]),
-            },
-            background=BackgroundTask(cleanup),
-        )
+        job = create_job(src, file.filename, work_dir)
+        return JSONResponse({"job_id": job.id, "status": job.status})
     except HTTPException:
-        upload_tmp.cleanup()
-        if out_tmp:
-            out_tmp.cleanup()
         raise
     except RuntimeError as exc:
-        upload_tmp.cleanup()
-        if out_tmp:
-            out_tmp.cleanup()
+        shutil.rmtree(work_dir, ignore_errors=True)
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
-        upload_tmp.cleanup()
-        if out_tmp:
-            out_tmp.cleanup()
-        raise HTTPException(500, f"Processing failed: {exc}") from exc
+        shutil.rmtree(work_dir, ignore_errors=True)
+        raise HTTPException(500, f"Upload failed: {exc}") from exc
+
+
+@app.get("/api/jobs/{job_id}")
+def job_status(job_id: str) -> dict:
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    out: dict = {"job_id": job.id, "status": job.status}
+    if job.status == "error":
+        out["error"] = job.error
+    return out
+
+
+@app.get("/api/jobs/{job_id}/download")
+def job_download(job_id: str) -> FileResponse:
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job.status == "processing" or job.status == "queued":
+        raise HTTPException(409, "Still processing")
+    if job.status == "error":
+        raise HTTPException(400, job.error or "Processing failed")
+    if not job.output_path or not job.output_path.exists():
+        raise HTTPException(500, "Output file missing")
+
+    stem = Path(job.filename).stem
+    return FileResponse(
+        path=job.output_path,
+        media_type="video/mp4",
+        filename=f"iphone_{stem}.mp4",
+        background=BackgroundTask(cleanup_job, job_id),
+    )

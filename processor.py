@@ -3,22 +3,15 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 
-MAX_BYTES = 100 * 1024 * 1024  # 100 MB — safe on Render starter (512 MB RAM)
-MAX_DURATION_SEC = 180  # 3 minutes
+MAX_BYTES = 100 * 1024 * 1024
+MAX_DURATION_SEC = 120  # 2 min — keeps processing fast on small instances
 
 
-def _run(cmd: list[str], *, timeout: int = 600) -> None:
-    proc = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+def _run(cmd: list[str], *, timeout: int = 900) -> None:
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     if proc.returncode != 0:
         err = (proc.stderr or proc.stdout or "ffmpeg failed").strip()
         raise RuntimeError(err[-2000:])
@@ -26,14 +19,8 @@ def _run(cmd: list[str], *, timeout: int = 600) -> None:
 
 def probe_video(path: Path) -> dict:
     cmd = [
-        "ffprobe",
-        "-v",
-        "quiet",
-        "-print_format",
-        "json",
-        "-show_format",
-        "-show_streams",
-        str(path),
+        "ffprobe", "-v", "quiet", "-print_format", "json",
+        "-show_format", "-show_streams", str(path),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     if proc.returncode != 0:
@@ -45,31 +32,22 @@ def probe_video(path: Path) -> dict:
     )
     if not video:
         raise RuntimeError("No video stream found.")
-    duration = float(data.get("format", {}).get("duration") or 0)
     return {
-        "duration": duration,
+        "duration": float(data.get("format", {}).get("duration") or 0),
         "width": int(video.get("width") or 0),
         "height": int(video.get("height") or 0),
-        "fps": video.get("r_frame_rate", "30/1"),
     }
 
 
 def _iphone_video_filter() -> str:
-    # Casual iPhone look: 30fps cadence, warm grade, mild sharpen, light grain,
-    # tiny handheld wobble, capped 1080p, phone-like contrast curve.
+    # Lightweight iPhone look: 30fps, 720p cap, warm grade, light grain.
     return (
         "fps=30,"
-        "scale='min(1920,iw)':'min(1920,ih)':force_original_aspect_ratio=decrease:flags=lanczos,"
+        "scale='min(1280,iw)':-2:flags=fast_bilinear,"
         "scale='trunc(iw/2)*2':'trunc(ih/2)*2',"
-        "eq=contrast=1.05:brightness=0.02:saturation=1.08:gamma=0.98,"
-        "curves=r='0/0.02 0.5/0.52 1/0.98':"
-        "g='0/0.01 0.5/0.5 1/0.96':"
-        "b='0/0.03 0.5/0.48 1/0.94',"
-        "colortemperature=7000,"
-        "unsharp=5:5:0.35:5:5:0.0,"
-        "noise=alls=7:allf=t+u,"
-        "crop=w='iw-6':h='ih-6':x='3+1.2*sin(2*PI*t*0.35)':y='3+1.0*cos(2*PI*t*0.27)',"
-        "scale=iw+6:ih+6,"
+        "eq=contrast=1.06:brightness=0.02:saturation=1.1:gamma=0.97,"
+        "colortemperature=7200,"
+        "noise=alls=5:allf=t,"
         "format=yuv420p"
     )
 
@@ -81,92 +59,36 @@ def process_to_iphone_look(src: Path, dst: Path) -> dict:
     if src.stat().st_size > MAX_BYTES:
         raise RuntimeError(f"File too large (max {MAX_BYTES // (1024 * 1024)} MB).")
 
-    vf = _iphone_video_filter()
     has_audio = _has_audio(src)
-
     cmd = [
-        "ffmpeg",
-        "-y",
-        "-threads",
-        "1",
-        "-i",
-        str(src),
-        "-vf",
-        vf,
-        "-c:v",
-        "libx264",
-        "-profile:v",
-        "high",
-        "-level",
-        "4.0",
-        "-pix_fmt",
-        "yuv420p",
-        "-crf",
-        "27",
-        "-maxrate",
-        "6M",
-        "-bufsize",
-        "12M",
-        "-preset",
-        "fast",
-        "-movflags",
-        "+faststart",
-        "-metadata",
-        "com.apple.quicktime.make=Apple",
-        "-metadata",
-        "com.apple.quicktime.model=iPhone 15",
+        "ffmpeg", "-y", "-threads", "1", "-i", str(src),
+        "-vf", _iphone_video_filter(),
+        "-c:v", "libx264", "-profile:v", "main", "-level", "3.1",
+        "-pix_fmt", "yuv420p", "-crf", "28",
+        "-maxrate", "4M", "-bufsize", "8M",
+        "-preset", "ultrafast",
+        "-movflags", "+faststart",
+        "-metadata", "com.apple.quicktime.make=Apple",
+        "-metadata", "com.apple.quicktime.model=iPhone 15",
     ]
-
     if has_audio:
-        cmd += [
-            "-c:a",
-            "aac",
-            "-b:a",
-            "128k",
-            "-ar",
-            "44100",
-            "-ac",
-            "2",
-        ]
+        cmd += ["-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2"]
     else:
         cmd += ["-an"]
-
     cmd.append(str(dst))
-    _run(cmd, timeout=max(120, int(info["duration"] * 4) + 60))
 
-    out_info = probe_video(dst)
+    _run(cmd, timeout=max(180, int(info["duration"] * 6) + 90))
+
     return {
         "input": info,
-        "output": out_info,
         "size_bytes": dst.stat().st_size,
     }
 
 
 def _has_audio(path: Path) -> bool:
     cmd = [
-        "ffprobe",
-        "-v",
-        "error",
-        "-select_streams",
-        "a",
-        "-show_entries",
-        "stream=codec_type",
-        "-of",
-        "csv=p=0",
-        str(path),
+        "ffprobe", "-v", "error", "-select_streams", "a",
+        "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(path),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     return bool(proc.stdout.strip())
-
-
-def process_file(src: Path, filename: str) -> tuple[Path, dict, tempfile.TemporaryDirectory]:
-    """Process a video already saved on disk. Returns output path + meta + temp dir."""
-    tmp = tempfile.TemporaryDirectory(prefix="iphonevid_")
-    root = Path(tmp.name)
-    dst = root / "output.mp4"
-
-    if src.stat().st_size > MAX_BYTES:
-        raise RuntimeError(f"File too large (max {MAX_BYTES // (1024 * 1024)} MB).")
-
-    meta = process_to_iphone_look(src, dst)
-    return dst, meta, tmp
