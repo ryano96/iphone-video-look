@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Video Look + Snap Caption</title>
+  <title>iPhone Video Look</title>
   <style>
     :root {
       --bg: #0f1117;
@@ -13,7 +13,6 @@
       --text: #f3f4f8;
       --muted: #9aa3b8;
       --accent: #6c8cff;
-      --accent-hover: #8aa4ff;
       --success: #3dd68c;
       --danger: #ff6b7a;
       --radius: 12px;
@@ -138,89 +137,13 @@
     }
 
     .features li { margin-bottom: 4px; }
-
-    .caption-wrap {
-      margin-top: 16px;
-      display: none;
-    }
-
-    .caption-wrap.show { display: block; }
-
-    .caption-wrap label {
-      display: block;
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--muted);
-      margin-bottom: 8px;
-    }
-
-    .caption-input {
-      width: 100%;
-      min-height: 72px;
-      padding: 12px 14px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      color: var(--text);
-      font: inherit;
-      font-size: 1rem;
-      resize: vertical;
-    }
-
-    .caption-input:focus {
-      outline: none;
-      border-color: var(--accent);
-    }
-
-    .caption-preview {
-      margin-top: 10px;
-      position: relative;
-      background: #1a1a1a;
-      border-radius: var(--radius);
-      aspect-ratio: 9 / 16;
-      max-height: 200px;
-      overflow: hidden;
-      border: 1px solid var(--border);
-      container-type: size;
-    }
-
-    /* Classic Snap: thin bar hugging text, 2.75% width-based type */
-    .caption-preview .snap-bar {
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: 50%;
-      transform: translateY(-50%);
-      background: rgba(0, 0, 0, 0.6);
-      padding: 1.15% 2.5%;
-      text-align: center;
-      box-sizing: border-box;
-      max-width: 100%;
-    }
-
-    .caption-preview .snap-bar span {
-      color: #fff;
-      font-weight: 400;
-      font-size: 2.75cqw;
-      line-height: 1.3;
-      font-family: Helvetica, Arial, sans-serif;
-      white-space: pre-wrap;
-      word-break: break-word;
-      display: block;
-    }
-
-    .caption-hint {
-      margin-top: 6px;
-      font-size: 0.8rem;
-      color: var(--muted);
-    }
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
-      <h1>Video Look + Snap Caption</h1>
-      <p>iPhone-style video with optional Snapchat caption bar.</p>
+      <h1>iPhone Video Look</h1>
+      <p>Drop in an AI video, get a casual iPhone-style clip back.</p>
     </header>
 
     <label class="drop" id="dropZone" for="fileInput">
@@ -232,28 +155,14 @@
 
     <div class="file-name" id="fileName"></div>
 
-    <div class="caption-wrap" id="captionWrap">
-      <label for="captionInput">Snapchat caption (optional)</label>
-      <textarea
-        id="captionInput"
-        class="caption-input"
-        placeholder="Type your caption here..."
-        maxlength="220"
-      ></textarea>
-      <div class="caption-preview" id="captionPreview" style="display:none">
-        <div class="snap-bar"><span id="captionPreviewText"></span></div>
-      </div>
-      <p class="caption-hint">Leave blank for iPhone look only. Caption adds the classic Snap bar (Helvetica, ~40% from top).</p>
-    </div>
-
     <button class="btn-go" id="processBtn" type="button">Process Video</button>
 
     <div class="status" id="status"></div>
 
     <ul class="features">
       <li>30fps iPhone-style color + compression</li>
-      <li>Optional Snapchat caption — thin black bar, small white Helvetica text</li>
-      <li>H.264 output ready for Instagram / TikTok / Snap</li>
+      <li>Warm grade, light grain, phone metadata</li>
+      <li>H.264 output ready for Instagram / TikTok</li>
     </ul>
   </div>
 
@@ -263,10 +172,6 @@
     const fileName = document.getElementById("fileName");
     const processBtn = document.getElementById("processBtn");
     const status = document.getElementById("status");
-    const captionWrap = document.getElementById("captionWrap");
-    const captionInput = document.getElementById("captionInput");
-    const captionPreview = document.getElementById("captionPreview");
-    const captionPreviewText = document.getElementById("captionPreviewText");
 
     let selectedFile = null;
 
@@ -288,39 +193,8 @@
       fileName.textContent = file.name + " (" + formatSize(file.size) + ")";
       fileName.classList.add("show");
       processBtn.classList.add("show");
-      captionWrap.classList.add("show");
       clearStatus();
     }
-
-    function wrapPreviewLines(text, maxChars) {
-      const words = text.split(/\s+/).filter(Boolean);
-      if (!words.length) return "";
-      const lines = [];
-      let current = "";
-      for (const word of words) {
-        const trial = current ? current + " " + word : word;
-        if (trial.length <= maxChars) {
-          current = trial;
-        } else {
-          if (current) lines.push(current);
-          current = word;
-        }
-      }
-      if (current) lines.push(current);
-      return lines.join("\n");
-    }
-
-    function updateCaptionPreview() {
-      const text = captionInput.value.trim();
-      if (text) {
-        captionPreviewText.textContent = wrapPreviewLines(text, 28);
-        captionPreview.style.display = "block";
-      } else {
-        captionPreview.style.display = "none";
-      }
-    }
-
-    captionInput.addEventListener("input", updateCaptionPreview);
 
     function formatSize(bytes) {
       if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
@@ -345,7 +219,6 @@
 
       const form = new FormData();
       form.append("file", selectedFile);
-      form.append("caption", captionInput.value.trim());
 
       processBtn.disabled = true;
       setStatus("Uploading…", "busy");
@@ -360,7 +233,7 @@
         const { job_id } = await res.json();
         setStatus("Processing… stay on this page.", "busy");
 
-        let status = "queued";
+        let jobStatus = "queued";
         let lastError = "";
         for (let i = 0; i < 300; i++) {
           await new Promise((r) => setTimeout(r, 2000));
@@ -372,18 +245,18 @@
             continue;
           }
           const data = await poll.json();
-          status = data.status;
-          if (status === "processing") {
+          jobStatus = data.status;
+          if (jobStatus === "processing") {
             setStatus("Processing video… (" + Math.round((i + 1) * 2) + "s)", "busy");
           }
-          if (status === "done") break;
-          if (status === "error") {
+          if (jobStatus === "done") break;
+          if (jobStatus === "error") {
             lastError = data.error || "Processing failed";
             break;
           }
         }
 
-        if (status !== "done") {
+        if (jobStatus !== "done") {
           throw new Error(lastError || "Timed out — try a shorter video.");
         }
 

@@ -6,7 +6,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
 CHUNK = 1024 * 1024
 
-app = FastAPI(title="iPhone Video Look", version="1.1.0")
+app = FastAPI(title="iPhone Video Look", version="1.0.0")
 
 if STATIC.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -26,14 +26,7 @@ if STATIC.is_dir():
 
 @app.get("/health")
 def health() -> dict:
-    from snap_caption import FONT_CANDIDATES
-
-    font_ok = any(Path(p).is_file() for p in FONT_CANDIDATES)
-    return {
-        "ok": True,
-        "ffmpeg": shutil.which("ffmpeg") is not None,
-        "caption_font": font_ok,
-    }
+    return {"ok": True, "ffmpeg": shutil.which("ffmpeg") is not None}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -59,10 +52,7 @@ async def _save_upload(file: UploadFile, dest: Path) -> int:
 
 
 @app.post("/api/process")
-async def start_process(
-    file: UploadFile = File(...),
-    caption: str = Form(""),
-) -> JSONResponse:
+async def start_process(file: UploadFile = File(...)) -> JSONResponse:
     if not file.filename:
         raise HTTPException(400, "No file provided")
 
@@ -83,7 +73,7 @@ async def start_process(
             shutil.rmtree(work_dir, ignore_errors=True)
             raise HTTPException(400, "Video too long (max 2 min).")
 
-        job = create_job(src, file.filename, work_dir, caption=caption.strip())
+        job = create_job(src, file.filename, work_dir)
         return JSONResponse({"job_id": job.id, "status": job.status})
     except HTTPException:
         raise
