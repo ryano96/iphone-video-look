@@ -9,14 +9,43 @@ from pathlib import Path
 MAX_BYTES = 100 * 1024 * 1024
 MAX_DURATION_SEC = 120
 MAX_CAPTION_LEN = 220
-FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+FONT_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+]
+
+
+def _font_path() -> str:
+    for path in FONT_CANDIDATES:
+        if Path(path).is_file():
+            return path
+    raise RuntimeError("Caption font not found on server.")
+
+
+def _scaled_size(width: int, height: int) -> tuple[int, int]:
+    if width <= 0 or height <= 0:
+        return 720, 1280
+    sw = min(1280, width)
+    sh = int(round(sw * height / width))
+    sh = max(2, sh - (sh % 2))
+    return sw, sh
+
+
+def _ffmpeg_error(stderr: str) -> str:
+    lines = [ln.strip() for ln in stderr.splitlines() if ln.strip()]
+    for ln in reversed(lines):
+        low = ln.lower()
+        if any(k in low for k in ("error", "invalid", "failed", "no such file", "unable")):
+            return ln[:600]
+    return stderr[-1200:]
 
 
 def _run(cmd: list[str], *, timeout: int = 900) -> None:
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     if proc.returncode != 0:
-        err = (proc.stderr or proc.stdout or "ffmpeg failed").strip()
-        raise RuntimeError(err[-2000:])
+        raise RuntimeError(_ffmpeg_error(proc.stderr or proc.stdout or "ffmpeg failed"))
 
 
 def probe_video(path: Path) -> dict:
@@ -64,48 +93,51 @@ def _wrap_caption(text: str, max_chars: int = 34) -> list[str]:
     return lines[:6]
 
 
-def _ffmpeg_path(path: Path) -> str:
-    return str(path).replace("\\", "/").replace(":", "\\:")
+def _escape_drawtext(text: str) -> str:
+    for src, dst in (("\\", "\\\\"), (":", "\\:"), ("'", "\\'"), ("%", "\\%")):
+        text = text.replace(src, dst)
+    return text
 
 
-def _snapchat_caption_filters(caption: str, tmp_dir: Path) -> str:
+def _snapchat_caption_filters(caption: str, frame_h: int) -> str:
     """Full-width Snapchat-style gray bar + white bold centered text."""
     lines = _wrap_caption(caption)
     if not lines:
         return ""
 
-    n = len(lines)
-    # Bar: edge-to-edge, translucent dark gray (Snapchat-style)
-    filters = [
-        "drawbox=x=0:y=h*0.58:w=iw"
-        f":h=(h*0.038*{n}*1.42+h*0.038*0.95):color=0x2A2A2A@0.72:t=fill",
-    ]
+    font = _font_path().replace(":", "\\:")
+    fontsize = max(28, int(frame_h * 0.038))
+    line_h = int(fontsize * 1.42)
+    pad = int(fontsize * 0.48)
+    bar_h = len(lines) * line_h + pad * 2
+    bar_y = int(frame_h * 0.58)
 
+    filters = [
+        f"drawbox=x=0:y={bar_y}:w=iw:h={bar_h}:color=black@0.72:t=fill",
+    ]
     for i, line in enumerate(lines):
-        textfile = tmp_dir / f"snap_line_{i}.txt"
-        textfile.write_text(line, encoding="utf-8")
-        tf = _ffmpeg_path(textfile)
-        y = f"h*0.58+h*0.038*0.48+{i}*h*0.038*1.42"
+        esc = _escape_drawtext(line)
+        y = bar_y + pad + i * line_h
         filters.append(
-            f"drawtext=fontfile={FONT_BOLD}:textfile={tf}"
-            f":fontcolor=white:fontsize=h*0.038"
-            f":x=(w-text_w)/2:y={y}"
+            f"drawtext=fontfile={font}:text='{esc}':fontcolor=white"
+            f":fontsize={fontsize}:x=(w-text_w)/2:y={y}"
         )
     return ",".join(filters)
 
 
-def _build_video_filter(caption: str, tmp_dir: Path) -> str:
+def _build_video_filter(caption: str, frame_h: int) -> str:
     base = (
         "fps=30,"
         "scale='min(1280,iw)':-2:flags=fast_bilinear,"
         "scale='trunc(iw/2)*2':'trunc(ih/2)*2',"
         "eq=contrast=1.06:brightness=0.02:saturation=1.1:gamma=0.97,"
         "colortemperature=7200,"
-        "noise=alls=5:allf=t,"
-        "format=yuv420p"
+        "noise=alls=5:allf=t"
     )
-    snap = _snapchat_caption_filters(caption, tmp_dir) if caption.strip() else ""
-    return f"{base},{snap}" if snap else base
+    snap = _snapchat_caption_filters(caption, frame_h) if caption.strip() else ""
+    if snap:
+        return f"{base},{snap},format=yuv420p"
+    return f"{base},format=yuv420p"
 
 
 def process_to_iphone_look(src: Path, dst: Path, *, caption: str = "") -> dict:
@@ -119,8 +151,8 @@ def process_to_iphone_look(src: Path, dst: Path, *, caption: str = "") -> dict:
     if len(caption) > MAX_CAPTION_LEN:
         raise RuntimeError(f"Caption too long (max {MAX_CAPTION_LEN} characters).")
 
-    tmp_dir = src.parent
-    vf = _build_video_filter(caption, tmp_dir)
+    _, frame_h = _scaled_size(info["width"], info["height"])
+    vf = _build_video_filter(caption, frame_h)
     has_audio = _has_audio(src)
 
     cmd = [

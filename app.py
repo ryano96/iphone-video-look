@@ -26,7 +26,14 @@ if STATIC.is_dir():
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "ffmpeg": shutil.which("ffmpeg") is not None}
+    from processor import FONT_CANDIDATES
+
+    font_ok = any(Path(p).is_file() for p in FONT_CANDIDATES)
+    return {
+        "ok": True,
+        "ffmpeg": shutil.which("ffmpeg") is not None,
+        "caption_font": font_ok,
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
