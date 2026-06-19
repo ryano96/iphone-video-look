@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-MAX_BYTES = 200 * 1024 * 1024  # 200 MB upload cap
+MAX_BYTES = 100 * 1024 * 1024  # 100 MB — safe on Render starter (512 MB RAM)
 MAX_DURATION_SEC = 180  # 3 minutes
 
 
@@ -87,6 +87,8 @@ def process_to_iphone_look(src: Path, dst: Path) -> dict:
     cmd = [
         "ffmpeg",
         "-y",
+        "-threads",
+        "1",
         "-i",
         str(src),
         "-vf",
@@ -106,7 +108,7 @@ def process_to_iphone_look(src: Path, dst: Path) -> dict:
         "-bufsize",
         "12M",
         "-preset",
-        "medium",
+        "fast",
         "-movflags",
         "+faststart",
         "-metadata",
@@ -157,20 +159,14 @@ def _has_audio(path: Path) -> bool:
     return bool(proc.stdout.strip())
 
 
-def process_upload(data: bytes, filename: str) -> tuple[Path, dict, tempfile.TemporaryDirectory]:
-    """Write upload to temp dir, process, return output path + meta + temp dir handle."""
-    if len(data) > MAX_BYTES:
-        raise RuntimeError(f"File too large (max {MAX_BYTES // (1024 * 1024)} MB).")
-
+def process_file(src: Path, filename: str) -> tuple[Path, dict, tempfile.TemporaryDirectory]:
+    """Process a video already saved on disk. Returns output path + meta + temp dir."""
     tmp = tempfile.TemporaryDirectory(prefix="iphonevid_")
     root = Path(tmp.name)
-    ext = Path(filename or "video.mp4").suffix.lower() or ".mp4"
-    if ext not in {".mp4", ".mov", ".webm", ".mkv", ".m4v"}:
-        ext = ".mp4"
-
-    src = root / f"input{ext}"
     dst = root / "output.mp4"
-    src.write_bytes(data)
+
+    if src.stat().st_size > MAX_BYTES:
+        raise RuntimeError(f"File too large (max {MAX_BYTES // (1024 * 1024)} MB).")
 
     meta = process_to_iphone_look(src, dst)
     return dst, meta, tmp
