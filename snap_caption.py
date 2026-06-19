@@ -1,10 +1,9 @@
 """Render Snapchat classic caption bar as a transparent PNG overlay.
 
-Specs from Stack Overflow canvas recreation (640×1136) + pixel measurement
-of the reference snap (imgur tivQ8xJ):
-  - Font: Helvetica / Nimbus Sans, ~2.75% of frame width
-  - Bar: full width, 74px at 1136h, pure black @ 60% alpha
-  - Placement: vertical center; extra lines expand the bar up/down
+Tuned for 9:16 video (canonical 1080×1920):
+  - Font: Helvetica / Nimbus Sans, 2.75% of frame width
+  - Bar: full width, hugs text with tight padding (not the old fixed 74px strip)
+  - Bar fill: black @ 60%; centered vertically; grows up/down for extra lines
 """
 
 from __future__ import annotations
@@ -13,10 +12,11 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-REF_W = 640
-REF_H = 1136
-REF_BAR_H = 74
+# Canonical 9:16 reference
+REF_W = 1080
+REF_H = 1920
 FONT_WIDTH_RATIO = 0.0275
+V_PAD_RATIO = 0.11  # vertical padding each side, fraction of glyph height
 BAR_ALPHA = 0.6
 BAR_RGB = (0, 0, 0)
 MAX_LINES = 6
@@ -41,7 +41,6 @@ def snap_metrics(frame_w: int, frame_h: int) -> dict:
     scale = frame_h / REF_H
     return {
         "font_size": max(11, round(frame_w * FONT_WIDTH_RATIO)),
-        "bar_line_h": max(14, round(REF_BAR_H * scale)),
         "anchor_center_y": frame_h // 2,
         "line_gap": max(1, round(2 * scale)),
         "h_pad": max(6, round(frame_w * 0.025)),
@@ -108,12 +107,12 @@ def _truncate_to_width(text: str, font: ImageFont.FreeTypeFont, max_width: int) 
     return (trimmed + "…") if trimmed else "…"
 
 
-def _bar_height(line_count: int, glyph_h: int, line_gap: int, bar_line_h: int) -> int:
+def _bar_height(glyph_h: int, line_count: int, line_gap: int) -> int:
+    v_pad = max(4, round(glyph_h * V_PAD_RATIO))
     if line_count <= 1:
-        return bar_line_h
+        return glyph_h + 2 * v_pad
     text_block = glyph_h * line_count + line_gap * (line_count - 1)
-    pad = max(8, round(bar_line_h * 0.24))
-    return max(bar_line_h, text_block + pad)
+    return text_block + 2 * v_pad
 
 
 def render_overlay_png(caption: str, frame_w: int, frame_h: int, out_path: Path) -> None:
@@ -131,8 +130,7 @@ def render_overlay_png(caption: str, frame_w: int, frame_h: int, out_path: Path)
 
     glyph_h = _glyph_height(font)
     line_step = glyph_h + m["line_gap"]
-    bar_h = _bar_height(len(lines), glyph_h, m["line_gap"], m["bar_line_h"])
-    bar_h = min(bar_h, frame_h)
+    bar_h = min(_bar_height(glyph_h, len(lines), m["line_gap"]), frame_h)
     bar_y = m["anchor_center_y"] - bar_h // 2
     bar_y = max(0, min(bar_y, frame_h - bar_h))
 
