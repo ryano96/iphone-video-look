@@ -1,10 +1,9 @@
 """Render Snapchat classic caption bar as a transparent PNG overlay.
 
-Measured from classic Snap UI (640×1136 iPhone canvas, Kapwing 720×1280 template):
-  - Font: Helvetica Regular, 35px at 1136h (~3.08% of frame height)
-  - Bar: edge-to-edge, grows with lines, black @ 60%
-  - Anchor: single-line bar center at y=450+37 (~42.9% from top)
-  - Lines stack from the middle: bar expands up/down, each line centered
+Calibrated from real snap screenshot (640×1136, imgur tivQ8xJ / Stack Overflow):
+  - Bar: y=450, 74px tall, black @ 60%, edge-to-edge
+  - Text: Helvetica Regular, ~23px glyph height inside the bar (not CSS 35px)
+  - Anchor: bar vertical center (~42.9% from top); lines stack from middle
 """
 
 from __future__ import annotations
@@ -13,16 +12,15 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-# Classic snap reference canvas (portrait iPhone snap)
 REF_W = 640
 REF_H = 1136
-REF_FONT = 35
 REF_BAR_H = 74
 REF_BAR_Y = 450
+REF_TEXT_H = 23  # measured glyph height from reference snap screenshot
 REF_BAR_ALPHA = 0.6
 REF_H_PAD = 16
-REF_V_PAD = 12
 MAX_LINES = 6
+FIT_SAMPLE = "Mg$"
 
 FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
@@ -39,20 +37,42 @@ def _font_path() -> str:
     raise RuntimeError("Snap caption font not found.")
 
 
+def _glyph_height(font: ImageFont.FreeTypeFont, sample: str = FIT_SAMPLE) -> int:
+    bbox = font.getbbox(sample)
+    return bbox[3] - bbox[1]
+
+
+def _font_for_target_height(font_path: str, target_h: int) -> ImageFont.FreeTypeFont:
+    target_h = max(8, target_h)
+    best_size = 10
+    best_font = ImageFont.truetype(font_path, best_size)
+    best_diff = abs(_glyph_height(best_font) - target_h)
+    for size in range(11, 64):
+        font = ImageFont.truetype(font_path, size)
+        diff = abs(_glyph_height(font) - target_h)
+        if diff <= best_diff:
+            best_diff = diff
+            best_size = size
+            best_font = font
+        elif diff > best_diff:
+            break
+    return best_font
+
+
 def snap_metrics(frame_w: int, frame_h: int) -> dict:
     """Scale classic Snap ratios to the output frame size."""
     scale = frame_h / REF_H
-    bar_h_single = max(18, round(REF_BAR_H * scale))
+    bar_h_single = max(14, round(REF_BAR_H * scale))
     bar_y = max(0, min(round(REF_BAR_Y * scale), frame_h - 1))
+    target_text_h = max(8, round(REF_TEXT_H * scale))
     return {
         "scale": scale,
-        "font_size": max(11, round(REF_FONT * scale)),
+        "target_text_h": target_text_h,
         "bar_h_single": bar_h_single,
         "bar_y": bar_y,
         "anchor_center_y": bar_y + bar_h_single // 2,
-        "h_pad": max(8, round(REF_H_PAD * scale)),
-        "v_pad": max(6, round(REF_V_PAD * scale)),
-        "line_gap": max(1, round(2 * scale)),
+        "h_pad": max(6, round(REF_H_PAD * scale)),
+        "line_gap": max(1, round(1 * scale)),
     }
 
 
@@ -114,24 +134,25 @@ def _truncate_to_width(text: str, font: ImageFont.FreeTypeFont, max_width: int) 
 def _layout_lines(
     text: str,
     font_path: str,
-    font_size: int,
+    target_text_h: int,
     max_width: int,
     frame_h: int,
-    v_pad: int,
     line_gap: int,
 ) -> tuple[ImageFont.FreeTypeFont, list[str]]:
-    font = ImageFont.truetype(font_path, font_size)
+    font = _font_for_target_height(font_path, target_text_h)
     lines = _wrap_lines(text, font, max_width)
     if not lines:
         return font, []
 
-    line_h = font.size + line_gap
+    glyph_h = _glyph_height(font)
+    line_h = glyph_h + line_gap
     max_bar_h = int(frame_h * 0.22)
-    while len(lines) > 1 and v_pad * 2 + line_h * len(lines) > max_bar_h and font_size > 10:
-        font_size -= 1
-        font = ImageFont.truetype(font_path, font_size)
+    while len(lines) > 1 and REF_BAR_H * (frame_h / REF_H) + line_h * (len(lines) - 1) > max_bar_h:
+        target_text_h = max(8, target_text_h - 1)
+        font = _font_for_target_height(font_path, target_text_h)
         lines = _wrap_lines(text, font, max_width)
-        line_h = font.size + line_gap
+        glyph_h = _glyph_height(font)
+        line_h = glyph_h + line_gap
 
     return font, lines
 
@@ -149,17 +170,17 @@ def render_overlay_png(caption: str, frame_w: int, frame_h: int, out_path: Path)
     font, lines = _layout_lines(
         caption,
         _font_path(),
-        m["font_size"],
+        m["target_text_h"],
         max_text_w,
         frame_h,
-        m["v_pad"],
         m["line_gap"],
     )
     if not lines:
         raise ValueError("Caption could not be rendered")
 
-    line_h = font.size + m["line_gap"]
-    bar_h = m["v_pad"] * 2 + line_h * len(lines)
+    glyph_h = _glyph_height(font)
+    line_h = glyph_h + m["line_gap"]
+    bar_h = max(m["bar_h_single"], line_h * len(lines) + max(4, round(8 * m["scale"])))
     bar_h = min(bar_h, frame_h)
     bar_y = m["anchor_center_y"] - bar_h // 2
     bar_y = max(0, min(bar_y, frame_h - bar_h))
