@@ -2,7 +2,7 @@ services:
   - type: web
     name: iphone-video-look
     runtime: docker
-    plan: standard
+    plan: starter
     healthCheckPath: /health
     envVars:
       - key: PORT
