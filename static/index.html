@@ -184,15 +184,15 @@
       container-type: size;
     }
 
-    /* Classic Snap: anchor center ~42.9% from top; bar grows up/down from middle */
+    /* Classic Snap: centered bar, 2.75% width-based type, black @ 60% */
     .caption-preview .snap-bar {
       position: absolute;
       left: 0;
       right: 0;
-      top: 42.9%;
+      top: 50%;
       transform: translateY(-50%);
       background: rgba(0, 0, 0, 0.6);
-      padding: 1.05% 2.5%;
+      padding: 2.8% 2.5%;
       text-align: center;
       box-sizing: border-box;
       max-width: 100%;
@@ -201,9 +201,9 @@
     .caption-preview .snap-bar span {
       color: #fff;
       font-weight: 400;
-      font-size: 2.03cqh;
-      line-height: 1.25;
-      font-family: Helvetica, Arial, "Liberation Sans", sans-serif;
+      font-size: 2.75cqw;
+      line-height: 1.3;
+      font-family: Helvetica, Arial, sans-serif;
       white-space: pre-wrap;
       word-break: break-word;
       display: block;

@@ -3,13 +3,13 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
         fontconfig \
-        fonts-liberation \
+        fonts-urw-base35 \
     && printf '%s\n' \
         '<?xml version="1.0"?>' \
         '<!DOCTYPE fontconfig SYSTEM "fonts.dtd">' \
         '<fontconfig>' \
-        '  <alias><family>Helvetica</family><prefer><family>Liberation Sans</family></prefer></alias>' \
-        '  <alias><family>Helvetica Neue</family><prefer><family>Liberation Sans</family></prefer></alias>' \
+        '  <alias><family>Helvetica</family><prefer><family>Nimbus Sans</family></prefer></alias>' \
+        '  <alias><family>Helvetica Neue</family><prefer><family>Nimbus Sans</family></prefer></alias>' \
         '</fontconfig>' \
         > /etc/fonts/local.conf \
     && fc-cache -f \

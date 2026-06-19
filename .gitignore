@@ -1,5 +1,5 @@
+assets/
 __pycache__/
 *.pyc
-.env
-.DS_Store
-Thumbs.db
+test_*.png
+test_*.jpg
